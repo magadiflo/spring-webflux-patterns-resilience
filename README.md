@@ -231,3 +231,112 @@ Cada paquete tendrá una responsabilidad específica:
 Cuando avancemos a las siguientes secciones, crearemos los paquetes correspondientes dentro del mismo proyecto,
 manteniendo el código organizado y separado por tema.
 
+## 🧱 Creando DTOs
+
+Los **DTOs (Data Transfer Objects)** son objetos que utilizamos para transportar datos entre componentes o servicios.
+En esta sección, los definiremos mediante `record`, una característica de Java que permite crear clases destinadas
+principalmente a almacenar datos de forma concisa.
+
+### 📦 DTOs de los servicios externos
+
+Primero, creamos los siguientes `record` para representar las respuestas de los servicios externos.
+
+#### `ProductResponse`
+
+Representa la información básica de un producto.
+
+````java
+public record ProductResponse(Integer id,
+                              String category,
+                              String description,
+                              Integer price) {
+}
+````
+
+#### `PromotionResponse`
+
+Representa la información de una promoción, incluyendo su identificador, tipo, descuento y fecha de finalización.
+
+````java
+public record PromotionResponse(Integer id,
+                                String type,
+                                Double Discount,
+                                LocalDate endDate) {
+    public static PromotionResponse noPromotion() {
+        return new PromotionResponse(-1, "no promotion", 0.0, LocalDate.now(ZoneId.of("America/Lima")));
+    }
+}
+````
+
+El método estático `noPromotion()` crea una instancia que representa la ausencia de una promoción, evitando tener que
+construir este objeto manualmente cada vez que se necesite.
+
+- `id = -1`: identifica el caso especial en el que no existe una promoción.
+- `type = "no promotion"`: indica que no hay una promoción disponible.
+- `discount = 0.0`: establece que no se aplica ningún descuento.
+- `endDate`: utiliza la fecha actual de la zona horaria `America/Lima`.
+
+**💡 ¿Por qué utilizar este método?**
+
+Permite representar la ausencia de una promoción mediante un objeto con valores predefinidos, facilitando su manejo
+dentro de la lógica del agregador.
+
+> **Nota:** `noPromotion()` es un método de fábrica estático: crea y devuelve una instancia de `PromotionResponse` sin
+> necesidad de invocar directamente su constructor desde el código que lo utiliza.
+
+#### `Review`
+
+Representa una reseña realizada por un usuario sobre un producto.
+
+````java
+public record Review(Integer id,
+                     String user,
+                     Integer rating,
+                     String comment) {
+}
+````
+
+> 💡 Recuerda que los nombres de los campos deben coincidir con los datos que devuelve cada servicio externo.
+
+### 💰 Creando el record Price
+
+Antes de crear el DTO que reunirá toda la información del producto, definimos el `record Price`, que representará los
+datos económicos calculados por nuestro agregador.
+
+````java
+public record Price(Integer listPrice,
+                    Double discount,
+                    Double discountedPrice,
+                    Double amountSaved,
+                    LocalDate endDate) {
+}
+````
+
+**¿Por qué crear `Price` si `ProductResponse` ya contiene el precio?**
+
+Porque el precio original no es suficiente. Nuestro agregador también calculará información como el precio con descuento
+(`discountedPrice`) y el importe ahorrado (`amountSaved`).
+
+Al agrupar estos datos en `Price`, el backend entrega la información calculada y el cliente se concentra en presentarla,
+sin tener que realizar esos cálculos.
+
+### 🛍️ Creando el record ProductAggregate
+
+Finalmente, creamos `ProductAggregate`, que representa la respuesta completa que recibirá el cliente.
+
+````java
+public record ProductAggregate(Integer id,
+                               String category,
+                               String description,
+                               Price price,
+                               List<Review> reviews) {
+}
+````
+
+Este DTO reúne la información del producto, sus datos de precio y la lista de reseñas obtenidas de los servicios
+externos.
+
+> **En resumen:** `ProductResponse`, `PromotionResponse` y `Review` representan datos procedentes de los servicios
+> externos; `Price` contiene la información económica preparada por nuestro backend; y `ProductAggregate` reúne los
+> datos necesarios para construir la respuesta final del agregador.
+
