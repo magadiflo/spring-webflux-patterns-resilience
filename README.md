@@ -177,3 +177,57 @@ devolverá el resultado al cliente.
 De esta manera, el cliente recibirá toda la información necesaria mediante una única solicitud, sin tener que
 comunicarse directamente con cada servicio ni encargarse de combinar sus respuestas. Así, podrá concentrarse en la
 lógica de presentación.
+
+## ⚙️ Configuración del Proyecto
+
+Desde [Spring Initializer](https://start.spring.io/#!type=maven-project&language=java&platformVersion=4.1.1&packaging=jar&configurationFileFormat=yaml&jvmVersion=25&groupId=dev.magadiflo&artifactId=webflux-patterns&packageName=dev.magadiflo.patterns.app&dependencies=webflux,lombok),
+creamos el proyecto con las siguientes dependencias iniciales:
+
+````xml
+<!--Spring Boot 4.1.1-->
+<!--Java 25-->
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-webflux</artifactId>
+    </dependency>
+
+    <dependency>
+        <groupId>org.projectlombok</groupId>
+        <artifactId>lombok</artifactId>
+        <optional>true</optional>
+    </dependency>
+</dependencies>
+````
+
+- `Spring WebFlux`: permite crear aplicaciones web reactivas y gestionar operaciones de entrada y salida de manera no
+  bloqueante.
+- `Lombok`: reduce el código repetitivo, por ejemplo, mediante la generación de getters, setters y constructores.
+
+### 📂 Organización del proyecto por secciones
+
+Para desarrollar el curso, utilizaremos un único proyecto y organizaremos el código de cada sección en paquetes
+independientes. De esta manera, no será necesario crear un proyecto nuevo cada vez que comencemos un tema.
+
+Actualmente, estamos en la `Sección 02`, ya que la `Sección 01` fue una breve introducción. Por ello, dentro del
+paquete `dev.magadiflo.patterns.app`, crearemos el paquete `sec02` con la siguiente estructura:
+
+````text
+dev.magadiflo.patterns.app
+└───sec02
+    ├───client
+    ├───controller
+    ├───dto
+    └───service 
+````
+
+Cada paquete tendrá una responsabilidad específica:
+
+- `client`: contiene los componentes encargados de comunicarse con los servicios externos.
+- `controller`: expone los endpoints que recibirán las solicitudes del cliente.
+- `dto`: contiene los objetos utilizados para transportar datos entre los componentes.
+- `service`: contiene la lógica de negocio y la composición de las respuestas del agregador.
+
+Cuando avancemos a las siguientes secciones, crearemos los paquetes correspondientes dentro del mismo proyecto,
+manteniendo el código organizado y separado por tema.
+
