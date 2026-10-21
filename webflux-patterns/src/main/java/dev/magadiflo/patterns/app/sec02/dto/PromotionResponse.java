@@ -5,7 +5,7 @@ import java.time.ZoneId;
 
 public record PromotionResponse(Integer id,
                                 String type,
-                                Double Discount,
+                                Double discount,
                                 LocalDate endDate) {
 
     public static PromotionResponse noPromotion() {

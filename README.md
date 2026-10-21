@@ -260,7 +260,7 @@ Representa la información de una promoción, incluyendo su identificador, tipo,
 ````java
 public record PromotionResponse(Integer id,
                                 String type,
-                                Double Discount,
+                                Double discount,
                                 LocalDate endDate) {
     public static PromotionResponse noPromotion() {
         return new PromotionResponse(-1, "no promotion", 0.0, LocalDate.now(ZoneId.of("America/Lima")));
@@ -447,3 +447,101 @@ public class ReviewClient {
 - `bodyToFlux()` permite procesar varios elementos.
 - `onErrorResume()` y `onErrorReturn()` definen valores alternativos cuando ocurre un error. En estos ejemplos, los
   errores se manejan como respuestas vacías o valores predeterminados, evitando que se propaguen al flujo de agregación.
+
+## ⚙️ Aggregator Service
+
+El **Aggregator Service** se encarga de reunir la información necesaria para mostrar los detalles de un producto. Para
+ello, sabe qué servicios externos debe consultar y qué tipo de respuesta devuelve cada uno, gracias a los DTO que
+definimos anteriormente.
+
+Para construir la respuesta que recibirá el cliente, el agregador consulta los siguientes servicios:
+
+- **Product Service:** proporciona los datos del producto.
+- **Promotion Service:** proporciona la información de la promoción.
+- **Review Service:** proporciona las reseñas del producto.
+
+### 🔗 Combinando respuestas con `Mono.zip()`
+
+Para combinar las respuestas de los tres servicios utilizaremos el operador `Mono.zip()`, que permite combinar varios
+publishers y obtener sus resultados juntos en una tupla (`Tuple3` en este caso).
+
+![06.png](assets/section-02/06.png)
+
+Podemos imaginar que estamos construyendo un coche. Necesitamos un bastidor, un motor, asientos y neumáticos, que pueden
+ser proporcionados por distintos proveedores. Para construir el coche, reunimos todas las piezas y las ensamblamos.
+
+De manera similar, el Aggregator Service reúne los datos del producto, su promoción y sus reseñas, y los combina para
+construir un único objeto que devolverá al cliente.
+
+### ⚡ Realizando las llamadas en paralelo
+
+Las llamadas a los servicios externos no necesitan ejecutarse secuencialmente. Si consultáramos primero las reseñas,
+después el producto y finalmente las promociones, el tiempo total podría aumentar.
+
+En su lugar, utilizaremos `Mono.zip()` para **suscribir y combinar las llamadas de forma concurrente**, sin bloquear el
+hilo mientras se esperan las respuestas. La agregación podrá continuar cuando todos los publishers hayan emitido sus
+resultados.
+
+### 💻 Implementación de `ProductAggregatorService`
+
+````java
+
+@RequiredArgsConstructor
+@Service
+public class ProductAggregatorService {
+
+    private final ProductClient productClient;
+    private final PromotionClient promotionClient;
+    private final ReviewClient reviewClient;
+
+    public Mono<ProductAggregate> aggregate(Integer id) {
+        return Mono.zip(
+                        this.productClient.getProduct(id),
+                        this.promotionClient.getPromotion(id),
+                        this.reviewClient.getReview(id)
+                )
+                .map(tuple ->
+                        this.toProductAggregate(tuple.getT1(), tuple.getT2(), tuple.getT3()));
+    }
+
+    private ProductAggregate toProductAggregate(ProductResponse product, PromotionResponse promotion, List<Review> reviews) {
+        Price price = this.createPrice(product, promotion);
+        return new ProductAggregate(
+                product.id(),
+                product.category(),
+                product.description(),
+                price,
+                reviews
+        );
+    }
+
+    private Price createPrice(ProductResponse product, PromotionResponse promotion) {
+        double amountSaved = product.price() * promotion.discount() / 100;
+        double discountedPrice = product.price() - amountSaved;
+        return new Price(
+                product.price(),
+                promotion.discount(),
+                discountedPrice,
+                amountSaved,
+                promotion.endDate()
+        );
+    }
+}
+````
+
+### 🧩 ¿Cómo funciona el código?
+
+1. **`aggregate(Integer id)`:** llama a los tres clientes y combina sus resultados mediante `Mono.zip()`. El resultado
+   contiene un `ProductResponse`, un `PromotionResponse` y una lista de `Review`.
+2. **`tuple.getT1()`, `tuple.getT2()` y `tuple.getT3()`:** permiten acceder a los resultados en el mismo orden en que se
+   proporcionaron los publishers a `Mono.zip()`.
+3. **`toProductAggregate()`:** recibe los datos obtenidos y construye el objeto `ProductAggregate` que se devolverá al
+   cliente.
+4. **`createPrice()`:** calcula el importe ahorrado y el precio final aplicando el porcentaje de descuento de la
+   promoción.
+
+> **Importante:** `Mono.zip()` necesita que todos los publishers emitan un valor para producir la `tupla`. Si alguno
+> completa vacío, como puede ocurrir con `ProductClient` cuando utiliza `Mono.empty()`, el resultado combinado puede
+> completarse sin emitir un `ProductAggregate`. En cambio, `PromotionClient` y `ReviewClient` proporcionan valores
+> alternativos ante errores, por lo que sus publishers pueden emitir un resultado incluso cuando falla una llamada
+> externa.
