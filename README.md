@@ -204,6 +204,43 @@ creamos el proyecto con las siguientes dependencias iniciales:
   bloqueante.
 - `Lombok`: reduce el código repetitivo, por ejemplo, mediante la generación de getters, setters y constructores.
 
+### ⚙️ Configurando propiedades iniciales
+
+En el archivo `application.yml` definimos algunas propiedades iniciales de la aplicación, incluyendo su nombre, la
+información de los errores y la configuración del versionado de la API.
+
+````yml
+spring:
+  application:
+    name: webflux-patterns
+  web:
+    error:
+      include-message: always
+  # API Versioning (Spring Boot 4)
+  webflux:
+    api-version:
+      required: true
+      supported: 1,2
+      use:
+        path-segment: 1
+````
+
+Descripción de las propiedades:
+
+- **spring.application.name:** establece el nombre de la aplicación, en este caso `webflux-patterns`.
+- **spring.web.error.include-message: always:** incluye el mensaje del error en la respuesta de error HTTP. Es útil
+  durante el desarrollo y la depuración, pero conviene evaluar su uso en producción para no exponer información interna.
+- **spring.webflux.api-version.required: true:** exige que las solicitudes incluyan una versión de API.
+- **spring.webflux.api-version.supported: 1,2:** declara las versiones de API admitidas: 1 y 2.
+- **spring.webflux.api-version.use.path-segment: 1:** indica que la versión se obtiene del primer segmento de la ruta de
+  la solicitud.
+
+Por ejemplo, una ruta como `/api/v1/products` utiliza la **versión 1**, mientras que `/api/v2/products` utiliza la
+**versión 2.**
+
+Con esta configuración, la aplicación identifica la versión de la API a partir de la ruta y puede gestionar las
+solicitudes según la versión indicada.
+
 ### 📂 Organización del proyecto por secciones
 
 Para desarrollar el curso, utilizaremos un único proyecto y organizaremos el código de cada sección en paquetes
@@ -370,7 +407,10 @@ public class ProductClient {
                 .uri("/{id}", id)
                 .retrieve()
                 .bodyToMono(ProductResponse.class)
-                .onErrorResume(throwable -> Mono.empty());
+                .onErrorResume(throwable -> {
+                    log.warn("Error obteniendo producto con ID {}: {}", id, throwable.getMessage());
+                    return Mono.empty();
+                });
     }
 }
 ````
@@ -545,3 +585,97 @@ public class ProductAggregatorService {
 > completarse sin emitir un `ProductAggregate`. En cambio, `PromotionClient` y `ReviewClient` proporcionan valores
 > alternativos ante errores, por lo que sus publishers pueden emitir un resultado incluso cuando falla una llamada
 > externa.
+
+## 🎮 Aggregator Controller
+
+El `ProductAggregateController` expone un endpoint HTTP para que el cliente pueda solicitar toda la información agregada
+de un producto. Para ello, delega el trabajo en `ProductAggregatorService`, que consulta los servicios externos y
+construye la respuesta.
+
+````java
+
+@RequiredArgsConstructor
+@RestController
+@RequestMapping(path = "/api/{version}/sec01/products", version = "1")
+public class ProductAggregateController {
+
+    private final ProductAggregatorService service;
+
+    @GetMapping(path = "/{id}")
+    public Mono<ResponseEntity<ProductAggregate>> getProductAggregate(@PathVariable Integer id) {
+        return this.service.aggregate(id)
+                .map(ResponseEntity::ok)
+                .defaultIfEmpty(ResponseEntity.notFound().build());
+    }
+}
+````
+
+#### 🔎 ¿Cómo funciona?
+
+- **`@RestController`:** indica que la clase gestiona solicitudes HTTP y que sus respuestas se escriben en el cuerpo de
+  la respuesta.
+- **`@RequestMapping`:** define la ruta base `/api/{version}/sec01/products` y asigna el controlador a la versión `1` de
+  la API.
+- **`@GetMapping("/{id}")`:** expone el endpoint para consultar un producto por su identificador.
+- **`service.aggregate(id)`:** invoca el servicio agregador para obtener la información del producto.
+- **`map(ResponseEntity::ok)`:** si se obtiene un `ProductAggregate`, devuelve una respuesta HTTP `200 OK` con el objeto
+  en el cuerpo.
+- **`defaultIfEmpty(ResponseEntity.notFound().build())`:** si el `Mono` termina sin emitir un valor, devuelve
+  `404 Not Found`.
+
+> **Importante:** el `404 Not Found` se devuelve cuando el flujo termina vacío. Esto puede ocurrir si `ProductClient`
+> devuelve `Mono.empty()` ante un error y, por tanto, `Mono.zip()` no consigue construir el resultado agregado. No
+> significa necesariamente que el producto no exista; también podría haberse producido un error al consultar un servicio
+> externo.
+
+### ⚙️ Configurando las URL de los servicios externos
+
+En el directorio `src/main/resources` ya tenemos el archivo `application.yml`, donde definimos algunas configuraciones
+de la aplicación. Spring Boot permite utilizar tanto `application.yml` como `application.properties` en un mismo
+proyecto.
+
+En este caso, agregaremos `application.properties` para definir las URL de los servicios externos en una sola línea por
+propiedad, lo que facilita su lectura y mantenimiento a medida que avancemos por las distintas secciones del curso.
+
+````properties
+sec01.product.service=http://localhost:7070/sec01/product
+sec01.promotion.service=http://localhost:7070/sec01/promotion
+sec01.review.service=http://localhost:7070/sec01/review
+````
+
+Estas propiedades se inyectan en los constructores de `ProductClient`, `PromotionClient` y `ReviewClient` mediante
+`@Value`. Así, cada cliente obtiene su URL base desde la configuración, en lugar de tenerla escrita directamente en el
+código.
+
+### 📦 Configurando el escaneo de componentes
+
+En la clase principal de Spring Boot, configuraremos `@SpringBootApplication` para indicar el paquete desde el que se
+deben detectar los componentes de esta sección.
+
+````java
+
+@SpringBootApplication(scanBasePackages = "dev.magadiflo.patterns.app.sec02")
+public class WebfluxPatternsApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(WebfluxPatternsApplication.class, args);
+    }
+
+}
+````
+
+Actualmente, el proyecto contiene el paquete `sec02`, por lo que esta configuración no sería estrictamente necesaria si
+todos los componentes estuvieran dentro del paquete que Spring Boot escanea por defecto. Sin embargo, el curso utilizará
+el mismo proyecto para desarrollar las distintas secciones (`sec02`, `sec03`, `sec04`, etc.).
+
+Al especificar `scanBasePackages`, limitamos el escaneo de componentes al paquete indicado, evitando que Spring registre
+accidentalmente componentes de otras secciones.
+
+Por ejemplo, si en `sec02` y `sec03` definimos controladores que exponen la misma ruta y el mismo método HTTP, al
+escanear ambos paquetes podríamos tener rutas duplicadas y provocar un conflicto al iniciar la aplicación. De forma
+similar, registrar beans con el mismo nombre puede ocasionar errores de definición duplicada, dependiendo de cómo estén
+configurados.
+
+> **Nota:** limitar el escaneo no garantiza que no existan todos los conflictos posibles; evita registrar los
+> componentes de los paquetes excluidos mediante este mecanismo de escaneo. Los componentes necesarios de otras partes
+> de la aplicación tendrían que configurarse o importarse explícitamente si se necesitan.

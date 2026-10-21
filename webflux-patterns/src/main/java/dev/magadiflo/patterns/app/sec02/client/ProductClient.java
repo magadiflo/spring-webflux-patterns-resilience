@@ -25,6 +25,9 @@ public class ProductClient {
                 .uri("/{id}", id)
                 .retrieve()
                 .bodyToMono(ProductResponse.class)
-                .onErrorResume(throwable -> Mono.empty());
+                .onErrorResume(throwable -> {
+                    log.warn("Error obteniendo producto con ID {}: {}", id, throwable.getMessage());
+                    return Mono.empty();
+                });
     }
 }
