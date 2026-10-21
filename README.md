@@ -340,3 +340,110 @@ externos.
 > externos; `Price` contiene la información económica preparada por nuestro backend; y `ProductAggregate` reúne los
 > datos necesarios para construir la respuesta final del agregador.
 
+## 🔌 Creando clientes de servicios externos
+
+Los clientes encapsulan las llamadas HTTP a los servicios externos mediante `WebClient`. Cada cliente consulta un
+servicio y transforma la respuesta en el DTO correspondiente.
+
+### 📦 ProductClient
+
+Consulta el servicio de productos y devuelve un `Mono<ProductResponse>`. Si ocurre un error, devuelve un `Mono.empty()`,
+es decir, completa sin emitir ningún producto.
+
+````java
+
+@Slf4j
+@Component
+public class ProductClient {
+
+    private final WebClient webClient;
+
+    public ProductClient(@Value("${sec01.product.service}") String baseUrl) {
+        this.webClient = WebClient.builder()
+                .baseUrl(baseUrl)
+                .build();
+    }
+
+    public Mono<ProductResponse> getProduct(Integer id) {
+        return this.webClient
+                .get()
+                .uri("/{id}", id)
+                .retrieve()
+                .bodyToMono(ProductResponse.class)
+                .onErrorResume(throwable -> Mono.empty());
+    }
+}
+````
+
+### 🏷️ PromotionClient
+
+Consulta el servicio de promociones. Si ocurre un error, devuelve la promoción predeterminada obtenida mediante
+`PromotionResponse.noPromotion()`.
+
+````java
+
+@Slf4j
+@Component
+public class PromotionClient {
+
+    private final PromotionResponse noPromotion = PromotionResponse.noPromotion();
+    private final WebClient webClient;
+
+    public PromotionClient(@Value("${sec01.promotion.service}") String baseUrl) {
+        this.webClient = WebClient.builder()
+                .baseUrl(baseUrl)
+                .build();
+    }
+
+    public Mono<PromotionResponse> getPromotion(Integer id) {
+        return this.webClient
+                .get()
+                .uri("/{id}", id)
+                .retrieve()
+                .bodyToMono(PromotionResponse.class)
+                .onErrorReturn(this.noPromotion);
+    }
+}
+````
+
+### ⭐ ReviewClient
+
+Consulta el servicio de reseñas. Como la respuesta contiene varios objetos `Review`, utiliza `bodyToFlux(Review.class)`
+para procesar cada elemento y `collectList()` para reunirlos en una lista.
+
+Si ocurre un error, devuelve una lista vacía.
+
+````java
+
+@Slf4j
+@Component
+public class ReviewClient {
+
+    private final WebClient webClient;
+
+    public ReviewClient(@Value("${sec01.review.service}") String baseUrl) {
+        this.webClient = WebClient.builder()
+                .baseUrl(baseUrl)
+                .build();
+    }
+
+    public Mono<List<Review>> getReview(Integer id) {
+        return this.webClient
+                .get()
+                .uri("/{id}", id)
+                .retrieve()
+                .bodyToFlux(Review.class)
+                .collectList()
+                .onErrorReturn(Collections.emptyList());
+    }
+}
+````
+
+### 📝 Consideraciones
+
+- `@Value` obtiene la URL base de cada servicio desde la configuración de Spring.
+- `retrieve()` ejecuta la solicitud y permite procesar la respuesta HTTP.
+- `bodyToMono()` convierte la respuesta en un único objeto.
+- `bodyToFlux()` permite procesar varios elementos.
+- `onErrorResume()` y `onErrorReturn()` definen valores alternativos cuando ocurre un error. En estos ejemplos, los
+  errores se manejan como respuestas vacías o valores predeterminados, evitando que se propaguen al flujo de agregación.
