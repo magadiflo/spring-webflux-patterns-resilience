@@ -679,3 +679,119 @@ configurados.
 > **Nota:** limitar el escaneo no garantiza que no existan todos los conflictos posibles; evita registrar los
 > componentes de los paquetes excluidos mediante este mecanismo de escaneo. Los componentes necesarios de otras partes
 > de la aplicación tendrían que configurarse o importarse explícitamente si se necesitan.
+
+## 🧪 Probando el Gateway Aggregator Pattern
+
+Como primer paso, levantamos el servicio externo que proporciona los datos de productos, promociones y reseñas.
+
+````bash
+D:\programming\spring\01.udemy\03.vinoth_selvaraj\spring-webflux-patterns-resilience (main -> origin)
+$ java -jar .\external-services\external-services-v2.jar
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::                (v2.6.4)
+
+2026-10-22 10:33:19.317  INFO 14008 --- [           main] c.v.e.ExternalServicesApplication        : Starting ExternalServicesApplication v0.0.1-SNAPSHOT using Java 25.0.2 on SysEngJava with PID 14008 (D:\programming\spring\01.udemy\03.vinoth_selvaraj\spring-webflux-patterns-resilience\external-services\external-services-v2.jar started by magadiflo in D:\programming\spring\01.udemy\03.vinoth_selvaraj\spring-webflux-patterns-resilience)
+2026-10-22 10:33:19.321  INFO 14008 --- [           main] c.v.e.ExternalServicesApplication        : No active profile set, falling back to 1 default profile: "default"
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by io.netty.util.internal.PlatformDependent0$3 (jar:file:/D:/programming/spring/01.udemy/03.vinoth_selvaraj/spring-webflux-patterns-resilience/external-services/external-services-v2.jar!/BOOT-INF/lib/netty-common-4.1.74.Final.jar!/)
+WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$3
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+2026-10-22 10:33:21.520  INFO 14008 --- [           main] o.s.b.web.embedded.netty.NettyWebServer  : Netty started on port 7070
+2026-10-22 10:33:21.927  INFO 14008 --- [           main] c.v.e.ExternalServicesApplication        : Started ExternalServicesApplication in 2.982 seconds (JVM running for 3.378)
+````
+
+A continuación, levantamos nuestro proyecto `webflux-patterns` para realizar las siguientes pruebas.
+
+### 🔎 Consultando los detalles de un producto existente
+
+Realizamos una petición HTTP GET para consultar el producto con ID 2. La respuesta devuelve el código HTTP 200 OK y un
+objeto JSON con los datos agregados del producto:
+
+````bash
+$ curl -v http://localhost:8080/api/v1/sec01/products/2 | jq
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+< Content-Length: 479
+<
+{
+  "id": 2,
+  "category": "Garden",
+  "description": "Practical Concrete Lamp",
+  "price": {
+    "listPrice": 21,
+    "discount": 5.41,
+    "discountedPrice": 19.8639,
+    "amountSaved": 1.1360999999999999,
+    "endDate": "2026-10-29"
+  },
+  "reviews": [
+    {
+      "id": 1,
+      "user": "Johnson",
+      "rating": 3,
+      "comment": "Quidem sunt accusamus dolorem asperiores recusandae."
+    },
+    {
+      "id": 2,
+      "user": "Juliette",
+      "rating": 5,
+      "comment": "Fugit voluptatum est."
+    },
+    {
+      "id": 3,
+      "user": "Hai",
+      "rating": 4,
+      "comment": "Fugiat corrupti ut corrupti quibusdam aliquid sunt quam."
+    }
+  ]
+}
+````
+
+Como podemos observar, el Aggregator Service reúne la información de distintos servicios y la devuelve en una sola
+respuesta:
+
+- **Producto:** identificador, categoría y descripción.
+- **Precio:** precio original, porcentaje de descuento, precio final, importe ahorrado y fecha de finalización de la
+  promoción.
+- **Reseñas:** lista de opiniones de los usuarios.
+
+Esta prueba demuestra cómo el patrón **Gateway Aggregator** simplifica el acceso del cliente: basta con una única
+petición para obtener la información combinada.
+
+### ❌ Consultando los detalles de un producto inexistente
+
+Ahora realizamos otra petición, esta vez para consultar el producto con ID 51. Recordemos que, según lo indicado en el
+curso, el servicio de productos proporciona detalles únicamente para los identificadores hasta el 50.
+
+````bash
+$ curl -v http://localhost:8080/api/v1/sec01/products/51 | jq
+>
+< HTTP/1.1 404 Not Found
+< content-length: 0
+< 
+````
+
+El endpoint devuelve `404 Not Found` porque el flujo de agregación termina sin emitir un `ProductAggregate`.
+
+Si revisamos la consola del IDE, veremos el mensaje de advertencia registrado por `ProductClient` al producirse el error
+`404 Not Found` al consultar el servicio externo:
+
+````bash
+2026-10-22T10:37:05.835-05:00  WARN 10864 --- [webflux-patterns] [ctor-http-nio-2] d.m.p.app.sec02.client.ProductClient     : Error obteniendo producto con ID 51: 404 Not Found from GET http://localhost:7070/sec01/product/51
+````
+
+Esto ocurre porque `ProductClient` maneja el error mediante `onErrorResume(...)` y devuelve `Mono.empty()`.
+Como `Mono.zip()` necesita que todos sus publishers emitan un valor para construir la tupla, si uno de ellos completa
+vacío, la agregación también puede completarse sin emitir un resultado. Finalmente, el controlador transforma ese
+resultado vacío en una respuesta `HTTP 404 Not Found` mediante `defaultIfEmpty(...)`.
+
+> **Conclusión:** estas pruebas permiten comprobar tanto el caso exitoso, en el que el agregador combina la información
+> de los servicios, como el caso en el que no puede construir la respuesta porque falla la consulta del producto.
+
