@@ -948,3 +948,115 @@ secundarios, mientras que la ausencia del producto impide construir la respuesta
 > secundarios. Sin embargo, todavía no hemos implementado mecanismos específicos como *Circuit Breaker*, *Retry*,
 > *Timeout* o *Bulkhead*, que estudiaremos más adelante en el curso.
 
+## ⚡ ¿Estamos realizando llamadas en paralelo?
+
+Hasta ahora hemos utilizado `Mono.zip()` para combinar las respuestas de `ProductClient`, `PromotionClient` y
+`ReviewClient`. Ahora comprobaremos si las llamadas a estos servicios se ejecutan de forma concurrente o secuencial.
+
+### ⏱️ Configurando un retraso de 3 segundos
+
+Para realizar esta prueba, iniciaremos nuevamente el servicio externo, pero esta vez agregaremos la propiedad
+`--sec01.delay.response=3000`, que configura un retraso de **3000 milisegundos (3 segundos)** en las respuestas.
+
+Esta propiedad pertenece al JAR externo proporcionado por el instructor. No es una propiedad propia de nuestro proyecto
+`webflux-patterns`.
+
+````bash
+D:\programming\spring\01.udemy\03.vinoth_selvaraj\spring-webflux-patterns-resilience (main -> origin)
+$ java -jar .\external-services\external-services-v2.jar --sec01.delay.response=3000
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::                (v2.6.4)
+
+2026-10-22 12:39:58.291  INFO 2288 --- [           main] c.v.e.ExternalServicesApplication        : Starting ExternalServicesApplication v0.0.1-SNAPSHOT using Java 25.0.2 on SysEngJava with PID 2288 (D:\programming\spring\01.udemy\03.vinoth_selvaraj\spring-webflux-patterns-resilience\external-services\external-services-v2.jar started by magadiflo in D:\programming\spring\01.udemy\03.vinoth_selvaraj\spring-webflux-patterns-resilience)
+2026-10-22 12:39:58.295  INFO 2288 --- [           main] c.v.e.ExternalServicesApplication        : No active profile set, falling back to 1 default profile: "default"
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by io.netty.util.internal.PlatformDependent0$3 (jar:file:/D:/programming/spring/01.udemy/03.vinoth_selvaraj/spring-webflux-patterns-resilience/external-services/external-services-v2.jar!/BOOT-INF/lib/netty-common-4.1.74.Final.jar!/)
+WARNING: Please consider reporting this to the maintainers of class io.netty.util.internal.PlatformDependent0$3
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+2026-10-22 12:40:00.535  INFO 2288 --- [           main] o.s.b.web.embedded.netty.NettyWebServer  : Netty started on port 7070
+2026-10-22 12:40:00.912  INFO 2288 --- [           main] c.v.e.ExternalServicesApplication        : Started ExternalServicesApplication in 3.014 seconds (JVM running for 3.457) 
+````
+
+### 🔎 Comprobando el tiempo de respuesta de cada servicio
+
+A continuación, abrimos Swagger UI y realizamos una petición individual a cada uno de los servicios: productos,
+promociones y reseñas.
+
+Como se observa en la imagen, cada servicio tarda aproximadamente **3 segundos** en responder debido al retraso
+configurado.
+
+![07.png](assets/section-02/07.png)
+
+Ahora que conocemos el tiempo de respuesta individual, podemos comprobar si el Aggregator Service realiza las llamadas
+en paralelo.
+
+### 🚀 Consultando el producto desde el Aggregator Service
+
+Realizamos una petición al endpoint de nuestro agregador:
+
+````bash
+$ curl -v http://localhost:8080/api/v1/sec01/products/1 | jq
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+< Content-Length: 626
+<
+100    626 100    626   0      0    181      0   00:03   00:03            182
+{
+  "id": 1,
+  "category": "Automotive, Computers & Jewelry",
+  "description": "Heavy Duty Silk Bench",
+  "price": {
+    "listPrice": 43,
+    "discount": 16.05,
+    "discountedPrice": 36.0985,
+    "amountSaved": 6.9014999999999995,
+    "endDate": "2026-10-30"
+  },
+  "reviews": [
+    {
+      "id": 1,
+      "user": "Ka",
+      "rating": 4,
+      "comment": "Voluptatibus id quia fuga."
+    },
+    {...},
+    {
+      "id": 5,
+      "user": "Silvana",
+      "rating": 5,
+      "comment": "Voluptatem facere cum et."
+    }
+  ]
+}
+````
+
+La respuesta es `200 OK` y contiene los datos del producto, su precio calculado y sus reseñas. Lo más importante para
+esta prueba es el tiempo que tarda en completarse la solicitud. El tiempo registrado es de aproximadamente **3
+segundos**, aunque cada uno de los tres servicios externos tarda ese mismo tiempo en responder individualmente.
+
+### 🧠 ¿Qué nos demuestra esta prueba?
+
+Comparemos los dos posibles escenarios:
+
+- **Llamadas secuenciales:** si cada solicitud comenzara después de terminar la anterior, el tiempo total sería de
+  aproximadamente \(3 + 3 + 3 = 9\) segundos.
+- **Llamadas concurrentes:** si las tres solicitudes se ejecutan simultáneamente, pueden completarse en aproximadamente
+  3 segundos, suponiendo que tengan tiempos de respuesta similares.
+
+Como la petición al Aggregator Service tarda aproximadamente 3 segundos y no 9, los resultados son consistentes con la
+ejecución concurrente de las llamadas.
+
+Esto concuerda con la implementación que realizamos mediante `Mono.zip()`, que suscribe los publishers y combina sus
+resultados cuando están disponibles, sin necesidad de esperar a que cada llamada termine antes de iniciar la siguiente.
+
+> **Conclusión:** hemos comprobado experimentalmente que las llamadas a los servicios externos se realizan de forma
+> concurrente. Esto reduce el tiempo total de respuesta frente a un enfoque secuencial y demuestra una de las ventajas
+> de utilizar programación reactiva con Spring WebFlux.
+
