@@ -795,3 +795,156 @@ resultado vacío en una respuesta `HTTP 404 Not Found` mediante `defaultIfEmpty(
 > **Conclusión:** estas pruebas permiten comprobar tanto el caso exitoso, en el que el agregador combina la información
 > de los servicios, como el caso en el que no puede construir la respuesta porque falla la consulta del producto.
 
+## 🛡️ ¿Es resiliente nuestro Aggregator Service?
+
+Para evaluar la resiliencia de nuestro `Aggregator Service`, revisaremos qué sucede cuando alguno de los servicios
+externos no dispone de la información solicitada o presenta errores.
+
+Según las descripciones de los servicios en Swagger, tenemos las siguientes condiciones:
+
+- **`Product Service`:** proporciona los detalles de los productos con identificadores del `1` al `50`.
+- **`Promotion Service`:** no dispone de promociones para los productos con ID `5`, `10`, `15`, `20`, `25`, `30`, `35`,
+  `40`, `45` y `50`.
+- **`Review Service`:** no dispone de reseñas para los productos con ID `10`, `20`, `30`, `40` y `50`. Además, el
+  producto con ID `7` presenta problemas particulares.
+
+Vamos a comprobar cómo responde nuestro agregador ante estas situaciones.
+
+### ❌ Caso 1: El producto no existe
+
+Anteriormente, probamos la consulta de un producto con ID `51`, que no existe en `Product Service`:
+
+````bash
+$ curl -v http://localhost:8080/api/v1/sec01/products/51 | jq
+>
+< HTTP/1.1 404 Not Found
+< content-length: 0
+<
+````
+
+La respuesta fue `HTTP/1.1 404 Not Found` esto ocurre porque `ProductClient` maneja el error mediante
+`onErrorResume(...)` y devuelve `Mono.empty()`. Como `Mono.zip()` necesita que todos los publishers emitan un valor para
+construir la tupla, la ausencia del producto provoca que la agregación termine sin emitir un resultado.
+
+Finalmente, el controlador utiliza `defaultIfEmpty(...)` para responder con `404 Not Found`.
+
+Este comportamiento es intencional: **si el producto principal no existe, no tiene sentido construir el objeto
+agregado**.
+
+### 🏷️ Caso 2: El producto existe, pero no tiene promoción
+
+Según la descripción de `Promotion Service`, el producto con ID `5` no tiene una promoción registrada. Sin embargo, el
+producto sí existe en `Product Service` y dispone de reseñas en `Review Service`.
+
+Si realizamos la siguiente petición, la aplicación responde con `200 OK` y devuelve los datos agregados. La parte más
+relevante de la respuesta es el objeto `price`:
+
+````bash
+$ curl -v http://localhost:8080/api/v1/sec01/products/5 | jq
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+< Content-Length: 977
+<
+{
+  "id": 5,
+  "category": "Kids",
+  "description": "Incredible Concrete Table",
+  "price": {
+    "listPrice": 31,
+    "discount": 0.0,
+    "discountedPrice": 31.0,
+    "amountSaved": 0.0,
+    "endDate": "2026-10-22"
+  },
+  "reviews": [
+    {
+      "id": 1,
+      "user": "Wilford",
+      "rating": 5,
+      "comment": "Voluptas sequi dolorem ut quisquam et consequatur."
+    },
+    {...},
+    {
+      "id": 9,
+      "user": "Matt",
+      "rating": 1,
+      "comment": "Debitis autem est veniam."
+    }
+  ]
+}
+````
+
+Aunque `Promotion Service` devuelve `404 Not Found` al consultar la promoción del producto `5`, nuestro
+`PromotionClient` intercepta el error mediante `.onErrorReturn(this.noPromotion)`. Este operador proporciona el valor
+predeterminado definido en `PromotionResponse.noPromotion()`, que representa la ausencia de una promoción.
+
+Por eso, el objeto `Price` muestra un descuento del `0.0 %`, un precio final igual al precio original y un importe
+ahorrado de `0.0`.
+
+> En este caso, el error de un servicio secundario no impide construir la respuesta del producto.
+
+### ⭐ Caso 3: El servicio de reseñas presenta problemas
+
+Ahora consultamos el producto con ID `7`, que, según la descripción de `Review Service`, presenta problemas
+particulares:
+
+````bash
+$ curl -v http://localhost:8080/api/v1/sec01/products/7 | jq
+>
+< HTTP/1.1 200 OK
+< Content-Type: application/json
+< Content-Length: 188
+<
+{
+  "id": 7,
+  "category": "Books",
+  "description": "Durable Bronze Knife",
+  "price": {
+    "listPrice": 27,
+    "discount": 4.54,
+    "discountedPrice": 25.7742,
+    "amountSaved": 1.2258,
+    "endDate": "2026-11-05"
+  },
+  "reviews": []
+}
+````
+
+Como se observa, la aplicación devuelve `200 OK`, pero el campo `reviews` aparece vacío. Esto sucede porque
+`ReviewClient` utiliza el operador `.onErrorReturn(Collections.emptyList())`. Cuando ocurre un error, el cliente
+devuelve una lista vacía en lugar de propagar la señal de error. Así, `Mono.zip()` puede recibir un valor de ese
+publisher y continuar con la agregación, siempre que los demás publishers también emitan sus resultados.
+
+> **Importante:** una lista vacía no demuestra por sí sola que hubo un error. También podría significar que el servicio
+> respondió correctamente, pero no encontró reseñas. En este ejemplo, sabemos que el producto `7` presenta problemas por
+> la descripción proporcionada por el curso.
+
+### 🧠 Conclusiones: ¿qué tan resiliente es nuestro agregador?
+
+Hasta este punto, hemos implementado un manejo básico de errores que permite construir la respuesta aunque fallen
+algunos servicios secundarios.
+
+El comportamiento depende de cómo maneja los errores cada cliente:
+
+| Cliente           | Comportamiento ante un error          | Resultado en la agregación                                             |
+|-------------------|---------------------------------------|------------------------------------------------------------------------|
+| `ProductClient`   | Devuelve `Mono.empty()`               | La agregación termina vacía y el controlador devuelve `404 Not Found`. |
+| `PromotionClient` | Devuelve una promoción predeterminada | La agregación puede continuar sin una promoción real.                  |
+| `ReviewClient`    | Devuelve una lista vacía              | La agregación puede continuar sin reseñas.                             |
+
+Recordemos que `Mono.zip()` combina los resultados de todos los publishers, pero **no sustituye automáticamente los
+valores que faltan**. Si alguno completa vacío, la combinación también puede completarse vacía. Si alguno emite un error
+no manejado, ese error puede propagarse y terminar la combinación.
+
+Por eso, los valores predeterminados definidos en `PromotionClient` y `ReviewClient` son importantes: permiten que el
+agregador siga funcionando aunque no se disponga de esa información secundaria.
+
+En nuestro caso, el producto es el elemento principal. Podemos construir un `ProductAggregate` sin promociones ni
+reseñas, pero no sin los datos del producto. Por esa razón, aceptamos valores alternativos para los servicios
+secundarios, mientras que la ausencia del producto impide construir la respuesta.
+
+> **En resumen:** nuestro `Aggregator Service` ya cuenta con cierta resiliencia frente a fallos de servicios
+> secundarios. Sin embargo, todavía no hemos implementado mecanismos específicos como *Circuit Breaker*, *Retry*,
+> *Timeout* o *Bulkhead*, que estudiaremos más adelante en el curso.
+
