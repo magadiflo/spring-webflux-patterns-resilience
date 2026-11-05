@@ -1,4 +1,4 @@
-package dev.magadiflo.patterns.app.sec04.service;
+package dev.magadiflo.patterns.app.sec04.service.orchestrator;
 
 import dev.magadiflo.patterns.app.sec04.client.UserClient;
 import dev.magadiflo.patterns.app.sec04.dto.OrchestrationRequestContext;

@@ -1,6 +1,6 @@
-package dev.magadiflo.patterns.app.sec04.service;
+package dev.magadiflo.patterns.app.sec04.service.orchestrator;
 
-import dev.magadiflo.patterns.app.sec04.client.InventoryClient;
+import dev.magadiflo.patterns.app.sec04.client.ShippingClient;
 import dev.magadiflo.patterns.app.sec04.dto.OrchestrationRequestContext;
 import dev.magadiflo.patterns.app.sec04.dto.Status;
 import lombok.RequiredArgsConstructor;
@@ -12,20 +12,20 @@ import java.util.function.Predicate;
 
 @RequiredArgsConstructor
 @Service
-public class InventoryOrchestrator extends Orchestrator {
+public class ShippingOrchestrator extends Orchestrator {
 
-    private final InventoryClient inventoryClient;
+    private final ShippingClient shippingClient;
 
     @Override
     public Mono<OrchestrationRequestContext> create(OrchestrationRequestContext context) {
-        return this.inventoryClient.deduct(context.getInventoryRequest())
-                .doOnNext(context::setInventoryResponse)
+        return this.shippingClient.schedule(context.getShippingRequest())
+                .doOnNext(context::setShippingResponse)
                 .thenReturn(context);
     }
 
     @Override
     public Predicate<OrchestrationRequestContext> isSuccess() {
-        return context -> context.getInventoryResponse().status() == Status.SUCCESS;
+        return context -> context.getShippingResponse().status() == Status.SUCCESS;
     }
 
     @Override
@@ -33,8 +33,8 @@ public class InventoryOrchestrator extends Orchestrator {
         return context -> {
             Mono.just(context)
                     .filter(isSuccess())
-                    .map(OrchestrationRequestContext::getInventoryRequest)
-                    .flatMap(this.inventoryClient::restore)
+                    .map(OrchestrationRequestContext::getShippingRequest)
+                    .flatMap(this.shippingClient::cancel)
                     .subscribe();
         };
     }
