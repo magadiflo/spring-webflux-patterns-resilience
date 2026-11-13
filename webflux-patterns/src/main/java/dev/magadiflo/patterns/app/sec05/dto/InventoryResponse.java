@@ -1,6 +1,9 @@
 package dev.magadiflo.patterns.app.sec05.dto;
 
-public record InventoryResponse(Integer productId,
+import java.util.UUID;
+
+public record InventoryResponse(UUID inventoryId,
+                                Integer productId,
                                 Integer quantity,
                                 Integer remainingQuantity,
                                 Status status) {

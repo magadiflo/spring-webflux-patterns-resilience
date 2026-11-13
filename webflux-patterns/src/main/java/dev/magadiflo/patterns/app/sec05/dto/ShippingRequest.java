@@ -4,5 +4,5 @@ import java.util.UUID;
 
 public record ShippingRequest(Integer quantity,
                               Integer userId,
-                              UUID orderId) {
+                              UUID inventoryId) {
 }
