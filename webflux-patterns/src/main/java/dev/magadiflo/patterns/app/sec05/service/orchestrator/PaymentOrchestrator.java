@@ -22,7 +22,8 @@ public class PaymentOrchestrator extends Orchestrator {
     public Mono<OrchestrationRequestContext> create(OrchestrationRequestContext context) {
         return this.userClient.deduct(context.getPaymentRequest())
                 .doOnNext(context::setPaymentResponse)
-                .thenReturn(context);
+                .thenReturn(context)
+                .handle(this.statusHandler());
     }
 
     @Override
