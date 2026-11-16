@@ -41,6 +41,7 @@ public class UserClient {
 
     private PaymentResponse buildErrorResponse(PaymentRequest request) {
         return new PaymentResponse(
+                null,
                 request.userId(),
                 null,
                 request.amount(),

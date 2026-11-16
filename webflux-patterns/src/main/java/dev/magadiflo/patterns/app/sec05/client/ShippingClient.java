@@ -41,7 +41,7 @@ public class ShippingClient {
 
     private ShippingResponse buildErrorResponse(ShippingRequest request) {
         return new ShippingResponse(
-                request.orderId(),
+                null,
                 request.quantity(),
                 Status.FAILED,
                 null,

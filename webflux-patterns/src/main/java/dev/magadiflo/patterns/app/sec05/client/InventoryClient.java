@@ -41,6 +41,7 @@ public class InventoryClient {
 
     private InventoryResponse buildErrorResponse(InventoryRequest request) {
         return new InventoryResponse(
+                null,
                 request.productId(),
                 request.quantity(),
                 null,
