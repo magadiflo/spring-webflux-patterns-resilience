@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -26,7 +27,8 @@ public class ShippingOrchestrator extends Orchestrator {
 
     @Override
     public Predicate<OrchestrationRequestContext> isSuccess() {
-        return context -> context.getShippingResponse().status() == Status.SUCCESS;
+        return context -> Objects.nonNull(context.getShippingResponse())
+                          && context.getShippingResponse().status() == Status.SUCCESS;
     }
 
     @Override

@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -28,7 +29,8 @@ public class PaymentOrchestrator extends Orchestrator {
 
     @Override
     public Predicate<OrchestrationRequestContext> isSuccess() {
-        return context -> context.getPaymentResponse().status() == Status.SUCCESS;
+        return context -> Objects.nonNull(context.getPaymentResponse())
+                          && context.getPaymentResponse().status() == Status.SUCCESS;
     }
 
     @Override
