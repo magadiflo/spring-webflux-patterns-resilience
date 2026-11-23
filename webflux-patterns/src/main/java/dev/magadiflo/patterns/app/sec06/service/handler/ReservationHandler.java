@@ -1,4 +1,4 @@
-package dev.magadiflo.patterns.app.sec06.service;
+package dev.magadiflo.patterns.app.sec06.service.handler;
 
 import dev.magadiflo.patterns.app.sec06.dto.ReservationItemRequest;
 import dev.magadiflo.patterns.app.sec06.dto.ReservationItemResponse;
