@@ -17,12 +17,12 @@ public class CarReservationHandler extends ReservationHandler {
     private final CarClient carClient;
 
     @Override
-    protected ReservationType getType() {
+    public ReservationType getType() {
         return ReservationType.CAR;
     }
 
     @Override
-    protected Flux<ReservationItemResponse> reserve(Flux<ReservationItemRequest> requestFlux) {
+    public Flux<ReservationItemResponse> reserve(Flux<ReservationItemRequest> requestFlux) {
         return requestFlux.map(this::toCarRequest)
                 .transform(this.carClient::reserve)
                 .map(this::toResponse);

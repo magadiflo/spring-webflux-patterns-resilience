@@ -17,12 +17,12 @@ public class RoomReservationHandler extends ReservationHandler {
     private final RoomClient roomClient;
 
     @Override
-    protected ReservationType getType() {
+    public ReservationType getType() {
         return ReservationType.ROOM;
     }
 
     @Override
-    protected Flux<ReservationItemResponse> reserve(Flux<ReservationItemRequest> requestFlux) {
+    public Flux<ReservationItemResponse> reserve(Flux<ReservationItemRequest> requestFlux) {
         return requestFlux.map(this::toRoomRequest)
                 .transform(this.roomClient::reserve)
                 .map(this::toResponse);
