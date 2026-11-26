@@ -3,7 +3,7 @@ package dev.magadiflo.patterns.app;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@SpringBootApplication(scanBasePackages = "dev.magadiflo.patterns.app.sec06")
+@SpringBootApplication(scanBasePackages = "dev.magadiflo.patterns.app.sec07")
 public class WebfluxPatternsApplication {
 
     public static void main(String[] args) {
